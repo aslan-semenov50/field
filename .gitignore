@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.npm-cache/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+.vscode/
+coverage/
+.DS_Store
+vite.config.js
+vite.config.d.ts
