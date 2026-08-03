@@ -1,0 +1,4 @@
+{
+  "collection": "@nestjs/cli",
+  "sourceRoot": "src"
+}
