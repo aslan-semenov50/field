@@ -1,0 +1,15 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: field-postgres
+    environment:
+      POSTGRES_USER: field
+      POSTGRES_PASSWORD: field
+      POSTGRES_DB: field
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+volumes:
+  postgres_data:
