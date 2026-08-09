@@ -7,15 +7,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Seniority {
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  MANAGER
+  DIRECTOR
+  EXECUTIVE
+}
+
+enum WorkFormat {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERNSHIP
+  FREELANCE
+}
+
+enum SalaryPeriod {
+  HOUR
+  MONTH
+  YEAR
+  PROJECT
+}
+
 model User {
-  id            String           @id @default(cuid())
-  email         String           @unique
-  passwordHash  String
-  name          String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  lastLoginAt   DateTime?
-  refreshSessions RefreshSession[]
+  id               String            @id @default(cuid())
+  email            String            @unique
+  passwordHash     String
+  name             String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  lastLoginAt      DateTime?
+  refreshSessions  RefreshSession[]
+  candidateProfile CandidateProfile?
+  searchProfiles   SearchProfile[]
+  resumes          Resume[]
 
   @@map("users")
 }
@@ -32,4 +68,75 @@ model RefreshSession {
 
   @@index([userId, expiresAt])
   @@map("refresh_sessions")
+}
+
+model CandidateProfile {
+  id                   String       @id @default(cuid())
+  userId               String       @unique
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName          String
+  locationText         String?
+  countryCode          String?      @db.VarChar(2)
+  city                 String?
+  yearsOfExperience    Int?
+  seniority            Seniority?
+  professionalSummary  String?      @db.Text
+  skills               String[]     @default([])
+  languages            String[]     @default([])
+  preferredWorkFormats WorkFormat[] @default([])
+  primaryResumeId      String?      @unique
+  primaryResume        Resume?      @relation("PrimaryResume", fields: [primaryResumeId], references: [id], onDelete: SetNull)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@map("candidate_profiles")
+}
+
+model SearchProfile {
+  id                 String           @id @default(cuid())
+  userId             String
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name               String
+  roleTitles         String[]         @default([])
+  seniorities        Seniority[]      @default([])
+  salaryMin          Decimal?         @db.Decimal(14, 2)
+  salaryCurrency     String?          @db.VarChar(3)
+  salaryPeriod       SalaryPeriod?
+  requireKnownSalary Boolean          @default(false)
+  countryCodes       String[]         @default([])
+  cities             String[]         @default([])
+  workFormats        WorkFormat[]     @default([])
+  employmentTypes    EmploymentType[] @default([])
+  requiredSkills     String[]         @default([])
+  preferredSkills    String[]         @default([])
+  isActive           Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([userId, isActive])
+  @@map("search_profiles")
+}
+
+model Resume {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title             String
+  languageCode      String   @db.VarChar(10)
+  structuredContent Json?
+  plainText         String?  @db.Text
+  contentVersion    Int      @default(1)
+  storageProvider   String?
+  storageKey        String?
+  originalFileName  String?
+  mimeType          String?
+  fileSizeBytes     Int?
+  checksumSha256    String?
+  archivedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  primaryForProfile CandidateProfile? @relation("PrimaryResume")
+
+  @@index([userId, archivedAt])
+  @@map("resumes")
 }
