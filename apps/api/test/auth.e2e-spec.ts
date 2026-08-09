@@ -182,7 +182,7 @@ describe('Auth e2e', () => {
   });
 
   it('missing refresh token -> 401', async () => {
-    await request(server).post('/auth/refresh').send({}).expect(401);
+    await request(server).post('/auth/refresh').expect(401);
   });
 
   it('invalid refresh token -> 401', async () => {

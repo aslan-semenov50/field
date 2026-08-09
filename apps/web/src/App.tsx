@@ -17,6 +17,7 @@ import {
 } from './data/mockData';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { useReducedMotion } from './shared/hooks/useReducedMotion';
+import type { AuthUser } from './auth/types';
 import type {
   ActiveSection,
   AddablePlatform,
@@ -86,7 +87,12 @@ interface SyncState {
   status: SyncStatus;
 }
 
-export function App() {
+interface AppProps {
+  user: AuthUser;
+  onLogout: () => Promise<void>;
+}
+
+export function App({ user, onLogout }: AppProps) {
   // Текущая активная вкладка шапки. Не влияет на состояние бокового меню.
   const [selectedPlatform, setSelectedPlatform] = useState<SelectedPlatform>('all');
   const [settledPlatform, setSettledPlatform] = useState<SelectedPlatform>('all');
@@ -364,6 +370,8 @@ export function App() {
             onToggle={handleToggleStage}
             onNavigate={handleNavigate}
             onOpenDialog={handleOpenDialog}
+            user={user}
+            onLogout={onLogout}
           />
         }
         platformSwitcher={

@@ -1,4 +1,4 @@
-import type { Ref } from 'react';
+import { useState, type Ref } from 'react';
 import {
   CircleHelp,
   ClipboardCheck,
@@ -8,6 +8,7 @@ import {
   Gift,
   LayoutGrid,
   List,
+  LogOut,
   MessageSquare,
   Mic,
   Plug,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import type { ActiveSection, Stage } from '../types';
+import type { AuthUser } from '../auth/types';
 import {
   StageAccordion,
   type StageNavigationItem,
@@ -77,6 +79,8 @@ export interface SidebarProps {
   onToggle: (stage: Stage) => void;
   onNavigate: (section: ActiveSection) => void;
   onOpenDialog: (opener: HTMLButtonElement) => void;
+  user: AuthUser;
+  onLogout: () => Promise<void>;
 }
 
 export function Sidebar({
@@ -88,9 +92,33 @@ export function Sidebar({
   onToggle,
   onNavigate,
   onOpenDialog,
+  user,
+  onLogout,
 }: SidebarProps) {
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutFailed, setLogoutFailed] = useState(false);
   const settingsActive = activeSection === 'settings';
   const profileActive = activeSection === 'profile';
+  const profileName = user.name?.trim() || user.email;
+  const initials = profileName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+  const handleLogout = async () => {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    setLogoutFailed(false);
+
+    try {
+      await onLogout();
+    } catch {
+      setLogoutPending(false);
+      setLogoutFailed(true);
+    }
+  };
 
   return (
     <aside
@@ -171,10 +199,19 @@ export function Sidebar({
           aria-current={profileActive ? 'page' : undefined}
           onClick={() => onNavigate('profile')}
         >
-          <span className="profile-avatar">АВ</span>
+          <span className="profile-avatar">{initials}</span>
           <span className="profile-copy">
-            один бездельник <small>Product Designer</small>
+            {profileName} <small>{user.email}</small>
           </span>
+        </button>
+        <button
+          className="utility-item auth-logout"
+          type="button"
+          disabled={logoutPending}
+          onClick={() => void handleLogout()}
+        >
+          <LogOut className="icon" aria-hidden="true" />
+          {logoutPending ? 'Выходим…' : logoutFailed ? 'Повторить выход' : 'Выйти'}
         </button>
       </footer>
     </aside>

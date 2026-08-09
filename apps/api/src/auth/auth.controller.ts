@@ -31,7 +31,7 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(@Req() req: Request, @Body() dto: RefreshDto, @Res({ passthrough: true }) res: Response) {
-    const refreshToken = req.cookies?.refreshToken || dto.refreshToken || '';
+    const refreshToken = req.cookies?.refreshToken || dto?.refreshToken || '';
     const result = await this.authService.refresh(refreshToken);
     this.setRefreshCookie(res, result.refreshToken);
     return { accessToken: result.accessToken };
