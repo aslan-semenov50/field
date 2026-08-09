@@ -31,7 +31,7 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(@Req() req: Request, @Body() dto: RefreshDto, @Res({ passthrough: true }) res: Response) {
-    const refreshToken = dto.refreshToken || req.cookies?.refreshToken || '';
+    const refreshToken = req.cookies?.refreshToken || dto.refreshToken || '';
     const result = await this.authService.refresh(refreshToken);
     this.setRefreshCookie(res, result.refreshToken);
     return { accessToken: result.accessToken };
@@ -40,8 +40,11 @@ export class AuthController {
   @Post('logout')
   @ApiOperation({ summary: 'Log out' })
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    await this.authService.logout(req.user?.sub, req.cookies?.sessionId);
-    this.clearRefreshCookie(res);
+    try {
+      await this.authService.logout(req.cookies?.refreshToken);
+    } finally {
+      this.clearRefreshCookie(res);
+    }
     return { success: true };
   }
 
@@ -57,11 +60,17 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.COOKIE_SECURE === 'true',
       sameSite: 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/',
+      maxAge: this.authService.getRefreshTtlMs(),
     });
   }
 
   private clearRefreshCookie(res: Response) {
-    res.clearCookie('refreshToken');
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.COOKIE_SECURE === 'true',
+      sameSite: 'lax',
+      path: '/',
+    });
   }
 }
