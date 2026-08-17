@@ -40,6 +40,12 @@ enum SalaryPeriod {
   PROJECT
 }
 
+enum VacancyLifecycleStatus {
+  ACTIVE
+  CLOSED
+  REMOVED
+}
+
 model User {
   id               String            @id @default(cuid())
   email            String            @unique
@@ -52,6 +58,8 @@ model User {
   candidateProfile CandidateProfile?
   searchProfiles   SearchProfile[]
   resumes          Resume[]
+  hhConnection     HhConnection?
+  hhOAuthState     HhOAuthState?
 
   @@map("users")
 }
@@ -139,4 +147,72 @@ model Resume {
 
   @@index([userId, archivedAt])
   @@map("resumes")
+}
+
+model HhConnection {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hhUserId               String
+  accessTokenCiphertext  String   @db.Text
+  refreshTokenCiphertext String   @db.Text
+  accessTokenExpiresAt   DateTime
+  connectedAt            DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("hh_connections")
+}
+
+model HhOAuthState {
+  stateHash              String   @id @db.VarChar(64)
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeVerifierCiphertext String   @db.Text
+  expiresAt              DateTime
+  createdAt              DateTime @default(now())
+
+  @@map("hh_oauth_states")
+}
+
+model VacancySource {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  name      String
+  isActive  Boolean   @default(true)
+  vacancies Vacancy[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("vacancy_sources")
+}
+
+model Vacancy {
+  id             String                   @id @default(cuid())
+  sourceId       String
+  source         VacancySource            @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  externalId     String
+  title          String
+  companyName    String?
+  description    String?                  @db.Text
+  salaryMin      Decimal?                 @db.Decimal(14, 2)
+  salaryMax      Decimal?                 @db.Decimal(14, 2)
+  salaryCurrency String?                  @db.VarChar(3)
+  salaryPeriod   SalaryPeriod?
+  locationText   String?
+  countryCode    String?                  @db.VarChar(2)
+  city           String?
+  workFormat     WorkFormat?
+  employmentType EmploymentType?
+  skills         String[]                 @default([])
+  sourceUrl      String
+  publishedAt    DateTime?
+  lastSeenAt     DateTime
+  status         VacancyLifecycleStatus   @default(ACTIVE)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@unique([sourceId, externalId])
+  @@index([status, publishedAt, id])
+  @@index([sourceId, status, publishedAt, id])
+  @@map("vacancies")
 }

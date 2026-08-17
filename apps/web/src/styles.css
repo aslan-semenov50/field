@@ -178,6 +178,25 @@
       letter-spacing: .225em;
     }
 
+    .brand-home {
+      position: relative;
+      z-index: 1;
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      border-radius: 10px;
+      color: inherit;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .brand-home:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 5px;
+    }
+
     .stage-list {
       flex: 1;
       min-height: 0;
@@ -279,8 +298,20 @@
         color var(--motion-fast) var(--ease-field-soft),
         background-color var(--motion-fast) var(--ease-field-soft),
         transform var(--motion-base) var(--ease-field),
-        opacity var(--motion-base) var(--ease-field);
+      opacity var(--motion-base) var(--ease-field);
     }
+
+    .profile-main-nav {
+      min-height: 46px;
+      margin-bottom: 3px;
+      padding: 10px;
+      opacity: 1;
+      transform: none;
+      font-size: 13px;
+      font-weight: 540;
+    }
+
+    .profile-main-nav:active { transform: scale(.985); }
 
     .stage.is-open .nav-item {
       opacity: 1;
@@ -1435,6 +1466,8 @@
       .platform-heading .page-description { display: none; }
       .sync-button { width: 45px; padding: 0; }
       .sync-button span { display: none; }
+      .sync-button.hh-connection-button { width: auto; padding-inline: 14px; }
+      .sync-button.hh-connection-button span { display: inline; }
       .connection-strip { grid-template-columns: 1fr; }
       .connection-item { min-height: 76px; padding: 17px 19px; }
       .connection-item + .connection-item::before { top: 0; right: 18px; bottom: auto; left: 18px; width: auto; height: 1px; }

@@ -27,6 +27,16 @@ interface PlatformWorkspaceProps {
   vacanciesExpanded: boolean;
   onSync: () => void;
   onToggleVacancies: () => void;
+  hhConnection?: {
+    status: 'loading' | 'connected' | 'disconnected' | 'error';
+    hhUserId: string | null;
+    connectedAt: string | null;
+    error: string | null;
+    action: 'connect' | 'disconnect' | null;
+    onConnect: () => void;
+    onDisconnect: () => void;
+    onRetry: () => void;
+  };
 }
 
 function vacancyTone(status: string): BadgeTone {
@@ -41,6 +51,17 @@ function messageCount(count: number) {
   return `${count} сообщения`;
 }
 
+function formatConnectionDate(value: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
 export function PlatformWorkspace({
   data,
   lastSync,
@@ -49,6 +70,7 @@ export function PlatformWorkspace({
   vacanciesExpanded,
   onSync,
   onToggleVacancies,
+  hhConnection,
 }: PlatformWorkspaceProps) {
   const syncLabel =
     syncStatus === 'syncing'
@@ -56,6 +78,34 @@ export function PlatformWorkspace({
       : syncStatus === 'success'
         ? 'Обновлено'
         : 'Синхронизировать';
+  const hhConnected = hhConnection?.status === 'connected';
+  const hhBusy = hhConnection?.status === 'loading' || hhConnection?.action !== null;
+  const hhStatusLabel =
+    hhConnection?.status === 'loading'
+      ? 'Проверяем…'
+      : hhConnection?.status === 'error'
+        ? 'Не удалось проверить'
+        : hhConnected
+          ? 'Активно'
+          : 'Не подключено';
+  const hhActionLabel =
+    hhConnection?.status === 'loading'
+      ? 'Проверяем…'
+      : hhConnection?.action === 'connect'
+        ? 'Подключаем…'
+        : hhConnection?.action === 'disconnect'
+          ? 'Отключаем…'
+          : hhConnection?.status === 'error'
+            ? 'Повторить'
+            : hhConnected
+              ? 'Отключить'
+              : 'Подключить';
+  const handleHhAction =
+    hhConnection?.status === 'error'
+      ? hhConnection.onRetry
+      : hhConnected
+        ? hhConnection?.onDisconnect
+        : hhConnection?.onConnect;
 
   const metrics: SummaryMetric[] = [
     { label: 'Отклики', value: data.metrics[0], detail: data.details[0], icon: 'send' },
@@ -78,16 +128,29 @@ export function PlatformWorkspace({
         platformHeading
         title={data.name}
         action={
-          <button
-            className={`sync-button${syncStatus === 'syncing' ? ' is-loading' : ''}`}
-            type="button"
-            disabled={syncDisabled}
-            aria-label={syncLabel}
-            onClick={onSync}
-          >
-            <RefreshCw className="icon" strokeWidth={1.7} aria-hidden="true" focusable="false" />
-            <span>{syncLabel}</span>
-          </button>
+          hhConnection ? (
+            <button
+              className={`sync-button hh-connection-button${hhBusy ? ' is-loading' : ''}`}
+              type="button"
+              disabled={hhBusy}
+              aria-label={hhActionLabel}
+              onClick={handleHhAction}
+            >
+              <RefreshCw className="icon" strokeWidth={1.7} aria-hidden="true" focusable="false" />
+              <span>{hhActionLabel}</span>
+            </button>
+          ) : (
+            <button
+              className={`sync-button${syncStatus === 'syncing' ? ' is-loading' : ''}`}
+              type="button"
+              disabled={syncDisabled}
+              aria-label={syncLabel}
+              onClick={onSync}
+            >
+              <RefreshCw className="icon" strokeWidth={1.7} aria-hidden="true" focusable="false" />
+              <span>{syncLabel}</span>
+            </button>
+          )
         }
       />
 
@@ -98,7 +161,12 @@ export function PlatformWorkspace({
           </span>
           <span className="connection-copy">
             <small>Подключение</small>
-            <strong className="connected">Активно</strong>
+            <strong
+              className={!hhConnection || hhConnected ? 'connected' : undefined}
+              title={hhConnection?.status === 'error' ? (hhConnection.error ?? undefined) : undefined}
+            >
+              {hhConnection ? hhStatusLabel : 'Активно'}
+            </strong>
           </span>
         </div>
         <div className="connection-item">
@@ -106,8 +174,8 @@ export function PlatformWorkspace({
             <Clock3 className="icon" strokeWidth={1.7} aria-hidden="true" focusable="false" />
           </span>
           <span className="connection-copy">
-            <small>Последняя синхронизация</small>
-            <strong>{lastSync}</strong>
+            <small>{hhConnection ? 'Аккаунт HH.ru' : 'Последняя синхронизация'}</small>
+            <strong>{hhConnection ? (hhConnection.hhUserId ?? '—') : lastSync}</strong>
           </span>
         </div>
         <div className="connection-item">
@@ -115,8 +183,10 @@ export function PlatformWorkspace({
             <Bell className="icon" strokeWidth={1.7} aria-hidden="true" focusable="false" />
           </span>
           <span className="connection-copy">
-            <small>Новых событий</small>
-            <strong>{data.events}</strong>
+            <small>{hhConnection ? 'Подключено' : 'Новых событий'}</small>
+            <strong>
+              {hhConnection ? formatConnectionDate(hhConnection.connectedAt) : data.events}
+            </strong>
           </span>
         </div>
       </section>

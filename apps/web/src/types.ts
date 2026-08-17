@@ -6,26 +6,20 @@ export type Platform =
   | 'djinni'
   | 'telegram';
 
-export type Stage = 'search' | 'interview' | 'career';
+export type Stage = 'me' | 'search' | 'introduction' | 'agreement' | 'analytics';
 
 export type ActiveSection =
   | 'overview'
   | 'resume'
-  | 'vacancies'
+  | 'profile'
+  | 'search-profile'
   | 'applications'
-  | 'messages'
-  | 'assistant'
-  | 'preparation'
-  | 'mock-interview'
-  | 'questions'
-  | 'star'
-  | 'interview-history'
+  | 'dialogue'
+  | 'interviews'
   | 'offers'
   | 'onboarding'
-  | 'probation'
-  | 'growth'
-  | 'settings'
-  | 'profile';
+  | 'aggregators'
+  | 'organizations';
 
 export type CorePlatform = Exclude<Platform, 'all'>;
 export type AddablePlatform = 'indeed' | 'glassdoor';
@@ -36,6 +30,14 @@ export type Period = '7d' | '30d' | '90d';
 export type SyncStatus = 'idle' | 'syncing' | 'success';
 export type BadgeTone = 'success' | 'warm' | 'neutral' | 'danger';
 export type MetricIcon = 'send' | 'inbox' | 'calendar' | 'trending' | 'x';
+
+export type HhConnectionStatus =
+  | { connected: false }
+  | { connected: true; hhUserId: string; connectedAt: string };
+
+export interface HhConnectResponse {
+  authorizationUrl: string;
+}
 
 export interface SummaryMetric {
   label: string;

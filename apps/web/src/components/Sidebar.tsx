@@ -1,73 +1,45 @@
 import { useState, type Ref } from 'react';
 import {
-  CircleHelp,
-  ClipboardCheck,
-  Clock3,
+  BarChart3,
+  Building2,
   Compass,
   FileText,
   Gift,
-  LayoutGrid,
-  List,
   LogOut,
   MessageSquare,
   Mic,
-  Plug,
   Search,
   Send,
-  Settings,
-  Sparkle,
-  TrendingUp,
+  UserRound,
 } from 'lucide-react';
 
-import type { ActiveSection, Stage } from '../types';
 import type { AuthUser } from '../auth/types';
-import {
-  StageAccordion,
-  type StageNavigationItem,
-} from './StageAccordion';
+import type { ActiveSection, Stage } from '../types';
+import { StageAccordion, type StageNavigationItem } from './StageAccordion';
+
+const meItems = [
+  { section: 'resume', label: 'Резюме', icon: FileText },
+  { section: 'profile', label: 'Профиль', icon: UserRound },
+] as const satisfies readonly StageNavigationItem[];
 
 const searchItems = [
-  { section: 'overview', label: 'Обзор', icon: LayoutGrid, action: true },
-  { section: 'resume', label: 'Резюме', icon: FileText, action: true },
-  { section: 'vacancies', label: 'Вакансии', icon: Search, action: true },
-  { section: 'applications', label: 'Отклики', icon: Send, action: true },
-  { section: 'messages', label: 'Сообщения', icon: MessageSquare, action: true },
-  { section: 'assistant', label: 'AI Ассистент', icon: Sparkle, action: true },
+  { section: 'search-profile', label: 'Что я хочу', icon: Search },
+  { section: 'applications', label: 'Обращения', icon: Send },
 ] as const satisfies readonly StageNavigationItem[];
 
-const interviewItems = [
-  {
-    section: 'preparation',
-    label: 'Подготовка',
-    icon: ClipboardCheck,
-    soonLabel: 'Подготовка',
-  },
-  {
-    section: 'mock-interview',
-    label: 'Mock Interview',
-    icon: Mic,
-    soonLabel: 'Mock Interview',
-  },
-  { section: 'questions', label: 'Вопросы', icon: CircleHelp, soonLabel: 'Вопросы' },
-  { section: 'star', label: 'STAR', icon: Sparkle, soonLabel: 'STAR' },
-  {
-    section: 'interview-history',
-    label: 'История интервью',
-    icon: List,
-    soonLabel: 'История интервью',
-  },
+const introductionItems = [
+  { section: 'dialogue', label: 'Диалог', icon: MessageSquare },
+  { section: 'interviews', label: 'Интервью', icon: Mic },
 ] as const satisfies readonly StageNavigationItem[];
 
-const careerItems = [
-  { section: 'offers', label: 'Офферы', icon: Gift, soonLabel: 'Офферы' },
-  { section: 'onboarding', label: 'Онбординг', icon: Compass, soonLabel: 'Онбординг' },
-  {
-    section: 'probation',
-    label: 'Испытательный срок',
-    icon: Clock3,
-    soonLabel: 'Испытательный срок',
-  },
-  { section: 'growth', label: 'Развитие', icon: TrendingUp, soonLabel: 'Развитие' },
+const agreementItems = [
+  { section: 'offers', label: 'Оферы', icon: Gift },
+  { section: 'onboarding', label: 'Онбординг', icon: Compass },
+] as const satisfies readonly StageNavigationItem[];
+
+const analyticsItems = [
+  { section: 'aggregators', label: 'Агрегаторы', icon: BarChart3 },
+  { section: 'organizations', label: 'Организации', icon: Building2 },
 ] as const satisfies readonly StageNavigationItem[];
 
 export interface SidebarProps {
@@ -78,8 +50,9 @@ export interface SidebarProps {
   firstTriggerRef?: Ref<HTMLButtonElement>;
   onToggle: (stage: Stage) => void;
   onNavigate: (section: ActiveSection) => void;
-  onOpenDialog: (opener: HTMLButtonElement) => void;
+  onHome: () => void;
   user: AuthUser;
+  candidateDisplayName: string | null;
   onLogout: () => Promise<void>;
 }
 
@@ -91,15 +64,15 @@ export function Sidebar({
   firstTriggerRef,
   onToggle,
   onNavigate,
-  onOpenDialog,
+  onHome,
   user,
+  candidateDisplayName,
   onLogout,
 }: SidebarProps) {
   const [logoutPending, setLogoutPending] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
-  const settingsActive = activeSection === 'settings';
   const profileActive = activeSection === 'profile';
-  const profileName = user.name?.trim() || user.email;
+  const profileName = candidateDisplayName?.trim() || user.name?.trim() || user.email;
   const initials = profileName
     .split(/\s+/)
     .map((part) => part[0])
@@ -129,11 +102,26 @@ export function Sidebar({
       inert={inert ? '' : undefined}
     >
       <header className="brand">
-        <span className="brand-name">FIELD</span>
-        <span className="brand-tagline">YOUR CAREER SPACE</span>
+        <button className="brand-home" type="button" onClick={onHome}>
+          <span className="brand-name">FIELD</span>
+          <span className="brand-tagline">YOUR CAREER SPACE</span>
+        </button>
       </header>
 
       <div className="stage-list">
+        <StageAccordion
+          stage="me"
+          index=""
+          title="Я"
+          contentId="stage-me"
+          expanded={expandedStages.me}
+          activeSection={activeSection}
+          items={meItems}
+          triggerRef={firstTriggerRef}
+          onToggle={onToggle}
+          onNavigate={onNavigate}
+        />
+
         <StageAccordion
           stage="search"
           index=""
@@ -142,31 +130,42 @@ export function Sidebar({
           expanded={expandedStages.search}
           activeSection={activeSection}
           items={searchItems}
-          triggerRef={firstTriggerRef}
           onToggle={onToggle}
           onNavigate={onNavigate}
         />
 
         <StageAccordion
-          stage="interview"
+          stage="introduction"
           index=""
           title="Знакомство"
-          contentId="stage-interview"
-          expanded={expandedStages.interview}
+          contentId="stage-introduction"
+          expanded={expandedStages.introduction}
           activeSection={activeSection}
-          items={interviewItems}
+          items={introductionItems}
           onToggle={onToggle}
           onNavigate={onNavigate}
         />
 
         <StageAccordion
-          stage="career"
+          stage="agreement"
           index=""
-          title="Работа"
-          contentId="stage-work"
-          expanded={expandedStages.career}
+          title="Договор"
+          contentId="stage-agreement"
+          expanded={expandedStages.agreement}
           activeSection={activeSection}
-          items={careerItems}
+          items={agreementItems}
+          onToggle={onToggle}
+          onNavigate={onNavigate}
+        />
+
+        <StageAccordion
+          stage="analytics"
+          index=""
+          title="Аналитика"
+          contentId="stage-analytics"
+          expanded={expandedStages.analytics}
+          activeSection={activeSection}
+          items={analyticsItems}
           onToggle={onToggle}
           onNavigate={onNavigate}
         />
@@ -176,26 +175,6 @@ export function Sidebar({
         <button
           className="utility-item"
           type="button"
-          data-open-dialog=""
-          onClick={(event) => onOpenDialog(event.currentTarget)}
-        >
-          <Plug className="icon" aria-hidden="true" />
-          Интеграции
-        </button>
-        <button
-          className="utility-item"
-          type="button"
-          data-soon="Настройки"
-          aria-current={settingsActive ? 'page' : undefined}
-          onClick={() => onNavigate('settings')}
-        >
-          <Settings className="icon" aria-hidden="true" />
-          Настройки
-        </button>
-        <button
-          className="utility-item"
-          type="button"
-          data-soon="Профиль"
           aria-current={profileActive ? 'page' : undefined}
           onClick={() => onNavigate('profile')}
         >

@@ -7,6 +7,8 @@ import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
 import { SearchProfilesModule } from './search-profiles/search-profiles.module';
 import { ResumesModule } from './resumes/resumes.module';
+import { VacanciesModule } from './vacancies/vacancies.module';
+import { HhModule } from './hh/hh.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { ResumesModule } from './resumes/resumes.module';
     ProfileModule,
     SearchProfilesModule,
     ResumesModule,
+    VacanciesModule,
+    HhModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -3,7 +3,7 @@ import { AuthScreen } from './AuthScreen';
 import { useAuth } from './AuthProvider';
 
 export function AuthGate() {
-  const { state, login, register, logout, retrySession } = useAuth();
+  const { state, login, register, logout, retrySession, authorizedRequest } = useAuth();
 
   if (state.status === 'checking') {
     return (
@@ -35,5 +35,5 @@ export function AuthGate() {
     return <AuthScreen onLogin={login} onRegister={register} />;
   }
 
-  return <App user={state.user} onLogout={logout} />;
+  return <App user={state.user} onLogout={logout} authorizedRequest={authorizedRequest} />;
 }

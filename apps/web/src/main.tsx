@@ -4,6 +4,7 @@ import { AuthGate } from './auth/AuthGate';
 import { AuthProvider } from './auth/AuthProvider';
 import './styles.css';
 import './auth/auth.css';
+import './profile/profile.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

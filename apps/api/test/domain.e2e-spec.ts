@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Prisma, VacancyLifecycleStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -13,15 +14,26 @@ type Actor = {
   accessToken: string;
 };
 
+type VacancyFixtures = {
+  hhCode: string;
+  habrCode: string;
+  activeHhIds: string[];
+  activeHabrId: string;
+  closedId: string;
+  removedId: string;
+};
+
 describe('Professional domain e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let server: Parameters<typeof request>[0];
   let actorA: Actor;
   let actorB: Actor;
+  let vacancyFixtures: VacancyFixtures;
 
   const runId = `${Date.now().toString(36)}${randomUUID().replace(/-/g, '').slice(0, 8)}`;
   const createdEmails: string[] = [];
+  const createdVacancySourceIds: string[] = [];
 
   const auth = (actor: Actor) => ({ Authorization: `Bearer ${actor.accessToken}` });
 
@@ -51,10 +63,76 @@ describe('Professional domain e2e', () => {
     server = app.getHttpServer();
     actorA = await registerActor('actor-a');
     actorB = await registerActor('actor-b');
+
+    const hhSource = await prisma.vacancySource.create({
+      data: { code: `hh-${runId}`, name: 'HH.ru' },
+    });
+    createdVacancySourceIds.push(hhSource.id);
+    const habrSource = await prisma.vacancySource.create({
+      data: { code: `habr-${runId}`, name: 'Хабр' },
+    });
+    createdVacancySourceIds.push(habrSource.id);
+
+    const publishedAt = new Date('2026-08-17T12:00:00.000Z');
+    const lastSeenAt = new Date('2026-08-17T13:00:00.000Z');
+    const createVacancy = (
+      sourceId: string,
+      externalId: string,
+      data: Partial<Prisma.VacancyUncheckedCreateInput> = {},
+    ) =>
+      prisma.vacancy.create({
+        data: {
+          sourceId,
+          externalId: `${runId}-${externalId}`,
+          title: `Vacancy ${externalId}`,
+          sourceUrl: `https://example.com/${runId}/${externalId}`,
+          publishedAt,
+          lastSeenAt,
+          ...data,
+        },
+      });
+
+    const activeHh = await Promise.all([
+      createVacancy(hhSource.id, 'hh-active-a', {
+        companyName: 'FIELD Labs',
+        salaryMin: new Prisma.Decimal('125000.50'),
+        salaryMax: new Prisma.Decimal('150000'),
+        salaryCurrency: 'RUB',
+      }),
+      createVacancy(hhSource.id, 'hh-active-b', {
+        publishedAt: new Date('2026-08-16T12:00:00.000Z'),
+      }),
+      createVacancy(hhSource.id, 'hh-active-c', { publishedAt: null }),
+      createVacancy(hhSource.id, 'hh-active-d', { publishedAt: null }),
+    ]);
+    const activeHabr = await createVacancy(habrSource.id, 'habr-active');
+    const closed = await createVacancy(hhSource.id, 'hh-closed', {
+      status: VacancyLifecycleStatus.CLOSED,
+    });
+    const removed = await createVacancy(hhSource.id, 'hh-removed', {
+      status: VacancyLifecycleStatus.REMOVED,
+    });
+
+    vacancyFixtures = {
+      hhCode: hhSource.code,
+      habrCode: habrSource.code,
+      activeHhIds: activeHh.map((item) => item.id),
+      activeHabrId: activeHabr.id,
+      closedId: closed.id,
+      removedId: removed.id,
+    };
   });
 
   afterAll(async () => {
     try {
+      if (prisma && createdVacancySourceIds.length > 0) {
+        await prisma.vacancy.deleteMany({
+          where: { sourceId: { in: createdVacancySourceIds } },
+        });
+        await prisma.vacancySource.deleteMany({
+          where: { id: { in: createdVacancySourceIds } },
+        });
+      }
       if (prisma && createdEmails.length > 0) {
         await prisma.user.deleteMany({ where: { email: { in: createdEmails } } });
       }
@@ -64,7 +142,7 @@ describe('Professional domain e2e', () => {
   });
 
   describe('CandidateProfile', () => {
-    it.each(['/profile', '/search-profiles', '/resumes'])('%s rejects unauthenticated access', async (url) => {
+    it.each(['/profile', '/search-profiles', '/resumes', '/vacancies'])('%s rejects unauthenticated access', async (url) => {
       await request(server).get(url).expect(401);
     });
 
@@ -326,6 +404,153 @@ describe('Professional domain e2e', () => {
 
       const profile = await request(server).get('/profile').set(auth(actorA)).expect(200);
       expect(profile.body.primaryResumeId).toBeNull();
+    });
+  });
+
+  describe('Vacancy', () => {
+    it('returns the same global vacancy to both authenticated users', async () => {
+      const vacancyId = vacancyFixtures.activeHhIds[0];
+
+      const [forActorA, forActorB] = await Promise.all([
+        request(server)
+          .get(`/vacancies/${vacancyId}`)
+          .set(auth(actorA))
+          .expect(200),
+        request(server)
+          .get(`/vacancies/${vacancyId}`)
+          .set(auth(actorB))
+          .expect(200),
+      ]);
+
+      expect(forActorA.body.id).toBe(vacancyId);
+      expect(forActorB.body.id).toBe(vacancyId);
+      expect(forActorA.body.source.code).toBe(vacancyFixtures.hhCode);
+      expect(forActorA.body.salaryMin).toBe('125000.50');
+      expect(forActorA.body.salaryMax).toBe('150000.00');
+    });
+
+    it('filters active vacancies by platform code', async () => {
+      const response = await request(server)
+        .get(`/vacancies?platform=${vacancyFixtures.hhCode}&limit=100`)
+        .set(auth(actorA))
+        .expect(200);
+
+      expect(response.body.items).toHaveLength(vacancyFixtures.activeHhIds.length);
+      expect(
+        response.body.items.every(
+          (item: { source: { code: string } }) =>
+            item.source.code === vacancyFixtures.hhCode,
+        ),
+      ).toBe(true);
+    });
+
+    it('returns active vacancies from all sources when platform is absent', async () => {
+      const ids: string[] = [];
+      const sourceCodes: string[] = [];
+      let cursor: string | null = null;
+
+      do {
+        const cursorQuery: string = cursor
+          ? `&cursor=${encodeURIComponent(cursor)}`
+          : '';
+        const response: request.Response = await request(server)
+          .get(`/vacancies?limit=100${cursorQuery}`)
+          .set(auth(actorA))
+          .expect(200);
+
+        ids.push(...response.body.items.map((item: { id: string }) => item.id));
+        sourceCodes.push(
+          ...response.body.items.map(
+            (item: { source: { code: string } }) => item.source.code,
+          ),
+        );
+        cursor = response.body.nextCursor;
+      } while (
+        cursor &&
+        (!vacancyFixtures.activeHhIds.every((id) => ids.includes(id)) ||
+          !ids.includes(vacancyFixtures.activeHabrId))
+      );
+
+      expect(ids).toEqual(expect.arrayContaining(vacancyFixtures.activeHhIds));
+      expect(ids).toContain(vacancyFixtures.activeHabrId);
+      expect(sourceCodes).toEqual(
+        expect.arrayContaining([
+          vacancyFixtures.hhCode,
+          vacancyFixtures.habrCode,
+        ]),
+      );
+    });
+
+    it('excludes closed and removed vacancies from the default list', async () => {
+      const response = await request(server)
+        .get(`/vacancies?platform=${vacancyFixtures.hhCode}&limit=100`)
+        .set(auth(actorA))
+        .expect(200);
+      const ids = response.body.items.map((item: { id: string }) => item.id);
+
+      expect(ids).not.toContain(vacancyFixtures.closedId);
+      expect(ids).not.toContain(vacancyFixtures.removedId);
+    });
+
+    it('returns 404 for an unknown vacancy', async () => {
+      await request(server)
+        .get(`/vacancies/missing-${runId}`)
+        .set(auth(actorA))
+        .expect(404);
+    });
+
+    it('returns non-active vacancy details by id', async () => {
+      const [closed, removed] = await Promise.all([
+        request(server)
+          .get(`/vacancies/${vacancyFixtures.closedId}`)
+          .set(auth(actorA))
+          .expect(200),
+        request(server)
+          .get(`/vacancies/${vacancyFixtures.removedId}`)
+          .set(auth(actorA))
+          .expect(200),
+      ]);
+
+      expect(closed.body.status).toBe('CLOSED');
+      expect(removed.body.status).toBe('REMOVED');
+    });
+
+    it.each([
+      '?limit=0',
+      '?limit=101',
+      '?platform=HH',
+      '?unknown=true',
+      '?cursor=not-a-cursor',
+    ])('rejects invalid list query %s', async (query) => {
+      await request(server)
+        .get(`/vacancies${query}`)
+        .set(auth(actorA))
+        .expect(400);
+    });
+
+    it('paginates across published and unpublished vacancies without duplicates', async () => {
+      const ids: string[] = [];
+      let cursor: string | null = null;
+
+      for (let page = 0; page < vacancyFixtures.activeHhIds.length; page += 1) {
+        const cursorQuery: string = cursor
+          ? `&cursor=${encodeURIComponent(cursor)}`
+          : '';
+        const response: request.Response = await request(server)
+          .get(
+            `/vacancies?platform=${vacancyFixtures.hhCode}&limit=1${cursorQuery}`,
+          )
+          .set(auth(actorA))
+          .expect(200);
+
+        expect(response.body.items).toHaveLength(1);
+        ids.push(response.body.items[0].id);
+        cursor = response.body.nextCursor;
+      }
+
+      expect(cursor).toBeNull();
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids).toEqual(expect.arrayContaining(vacancyFixtures.activeHhIds));
     });
   });
 });

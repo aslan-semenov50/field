@@ -7,8 +7,6 @@ export interface StageNavigationItem {
   section: ActiveSection;
   label: string;
   icon: LucideIcon;
-  action?: boolean;
-  soonLabel?: string;
 }
 
 interface StageAccordionProps {
@@ -60,15 +58,13 @@ export function StageAccordion({
       >
         <div className="stage-content-inner">
           <nav className="nav-list" aria-label={title}>
-            {items.map(({ section, label, icon: Icon, action, soonLabel }) => {
+            {items.map(({ section, label, icon: Icon }) => {
               const isActive = activeSection === section;
 
               return (
                 <button
                   className={`nav-item${isActive ? ' is-active' : ''}`}
                   type="button"
-                  data-action={action ? section : undefined}
-                  data-soon={soonLabel}
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => onNavigate(section)}
                   key={section}

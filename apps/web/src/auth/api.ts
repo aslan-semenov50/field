@@ -8,6 +8,12 @@ interface LogoutResponse {
   success: boolean;
 }
 
+export interface ApiRequestOptions extends RequestInit {
+  accessToken?: string;
+}
+
+export type AuthorizedRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
+
 const apiUrl = (import.meta.env.VITE_API_URL?.trim() || 'http://localhost:3000').replace(/\/+$/, '');
 
 export class ApiError extends Error {
@@ -33,9 +39,16 @@ function extractMessage(value: unknown): string | null {
   return null;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const { accessToken, ...init } = options;
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
+  }
   if (init.body !== undefined && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
@@ -69,36 +82,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const authApi = {
   register(input: RegisterInput) {
-    return request<AccessTokenResponse>('/auth/register', {
+    return apiRequest<AccessTokenResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(input),
     });
   },
 
   login(input: LoginInput) {
-    return request<AccessTokenResponse>('/auth/login', {
+    return apiRequest<AccessTokenResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(input),
     });
   },
 
   refresh() {
-    return request<AccessTokenResponse>('/auth/refresh', {
+    return apiRequest<AccessTokenResponse>('/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({}),
     });
   },
 
   logout() {
-    return request<LogoutResponse>('/auth/logout', {
+    return apiRequest<LogoutResponse>('/auth/logout', {
       method: 'POST',
       body: JSON.stringify({}),
     });
   },
 
   me(accessToken: string) {
-    return request<AuthUser>('/auth/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    return apiRequest<AuthUser>('/auth/me', {
+      accessToken,
     });
   },
 };

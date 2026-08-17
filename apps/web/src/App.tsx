@@ -17,10 +17,15 @@ import {
 } from './data/mockData';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { useReducedMotion } from './shared/hooks/useReducedMotion';
+import { ApiError, type AuthorizedRequest } from './auth/api';
 import type { AuthUser } from './auth/types';
+import { createDomainApi } from './profile/api';
+import { ProfileWorkspace } from './profile/ProfileWorkspace';
+import type { CandidateProfile } from './profile/types';
 import type {
   ActiveSection,
   AddablePlatform,
+  HhConnectionStatus,
   Period,
   SelectedPlatform,
   Stage,
@@ -59,16 +64,7 @@ function readPlatformOrder(): SelectedPlatform[] {
   }
 }
 
-const sectionTargets: Partial<Record<ActiveSection, string>> = {
-  overview: 'overviewSection',
-  resume: 'resumeSection',
-  vacancies: 'platformsSection',
-  applications: 'platformsSection',
-  assistant: 'assistantSection',
-  messages: 'messagesSection',
-};
-
-const soonLabels: Partial<Record<ActiveSection, string>> = {
+const soonLabels: Partial<Record<string, string>> = {
   preparation: 'Подготовка',
   'mock-interview': 'Mock Interview',
   questions: 'Вопросы',
@@ -79,7 +75,16 @@ const soonLabels: Partial<Record<ActiveSection, string>> = {
   probation: 'Испытательный срок',
   growth: 'Развитие',
   settings: 'Настройки',
-  profile: 'Профиль',
+};
+
+const placeholderLabels: Partial<Record<ActiveSection, string>> = {
+  applications: '\u041e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u044f',
+  dialogue: '\u0414\u0438\u0430\u043b\u043e\u0433',
+  interviews: '\u0418\u043d\u0442\u0435\u0440\u0432\u044c\u044e',
+  offers: '\u041e\u0444\u0435\u0440\u044b',
+  onboarding: '\u041e\u043d\u0431\u043e\u0440\u0434\u0438\u043d\u0433',
+  aggregators: '\u0410\u0433\u0440\u0435\u0433\u0430\u0442\u043e\u0440\u044b',
+  organizations: '\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u0438',
 };
 
 interface SyncState {
@@ -87,21 +92,45 @@ interface SyncState {
   status: SyncStatus;
 }
 
+type CandidateProfileResource =
+  | { status: 'loading'; data: CandidateProfile | null; error: null }
+  | { status: 'ready'; data: CandidateProfile | null; error: null }
+  | { status: 'error'; data: CandidateProfile | null; error: string };
+
+type HhConnectionResource =
+  | { status: 'loading'; data: null; error: null }
+  | { status: 'ready'; data: HhConnectionStatus; error: null }
+  | { status: 'error'; data: null; error: string };
+
+type HhConnectionAction = 'connect' | 'disconnect' | null;
+
+function readableProfileError(error: unknown) {
+  if (error instanceof ApiError) return error.message;
+  return 'Не удалось загрузить внутренний профиль FIELD.';
+}
+
+function readableHhError(error: unknown) {
+  if (error instanceof ApiError) return error.message;
+  return 'Не удалось выполнить операцию с HH.ru.';
+}
+
 interface AppProps {
   user: AuthUser;
   onLogout: () => Promise<void>;
+  authorizedRequest: AuthorizedRequest;
 }
 
-export function App({ user, onLogout }: AppProps) {
+export function App({ user, onLogout, authorizedRequest }: AppProps) {
   // Текущая активная вкладка шапки. Не влияет на состояние бокового меню.
   const [selectedPlatform, setSelectedPlatform] = useState<SelectedPlatform>('all');
-  const [settledPlatform, setSettledPlatform] = useState<SelectedPlatform>('all');
   const [platformOrder, setPlatformOrder] = useState<SelectedPlatform[]>(readPlatformOrder);
   const [activeSection, setActiveSection] = useState<ActiveSection>('overview');
   const [expandedStages, setExpandedStages] = useState<Record<Stage, boolean>>({
-    search: true,
-    interview: false,
-    career: false,
+    me: false,
+    search: false,
+    introduction: false,
+    agreement: false,
+    analytics: false,
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [period, setPeriod] = useState<Period>(defaultPeriod);
@@ -113,7 +142,15 @@ export function App({ user, onLogout }: AppProps) {
   const [connectedPlatforms, setConnectedPlatforms] = useState<AddablePlatform[]>([]);
   const [vacanciesExpanded, setVacanciesExpanded] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  const [candidateProfileResource, setCandidateProfileResource] =
+    useState<CandidateProfileResource>({ status: 'loading', data: null, error: null });
+  const [candidateProfileReloadKey, setCandidateProfileReloadKey] = useState(0);
+  const [hhConnectionResource, setHhConnectionResource] = useState<HhConnectionResource>({
+    status: 'loading',
+    data: null,
+    error: null,
+  });
+  const [hhConnectionAction, setHhConnectionAction] = useState<HhConnectionAction>(null);
 
   const isMobile = useMediaQuery('(max-width: 880px)');
   const reducedMotion = useReducedMotion();
@@ -122,6 +159,67 @@ export function App({ user, onLogout }: AppProps) {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const dialogOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const hhConnectionRequestRef = useRef(0);
+
+  const loadHhConnection = useCallback(async () => {
+    const requestId = ++hhConnectionRequestRef.current;
+    setHhConnectionResource({ status: 'loading', data: null, error: null });
+
+    try {
+      const data = await createDomainApi(authorizedRequest).hh.get();
+      if (requestId !== hhConnectionRequestRef.current) return;
+      setHhConnectionResource({ status: 'ready', data, error: null });
+    } catch (error) {
+      if (requestId !== hhConnectionRequestRef.current) return;
+      setHhConnectionResource({
+        status: 'error',
+        data: null,
+        error: readableHhError(error),
+      });
+    }
+  }, [authorizedRequest]);
+
+  useEffect(() => {
+    void loadHhConnection();
+    return () => {
+      hhConnectionRequestRef.current += 1;
+    };
+  }, [loadHhConnection]);
+
+  useEffect(() => {
+    let active = true;
+    const profileApi = createDomainApi(authorizedRequest).profile;
+
+    setCandidateProfileResource((current) => ({
+      status: 'loading',
+      data: current.data,
+      error: null,
+    }));
+
+    void profileApi
+      .get()
+      .then((profile) => {
+        if (active) {
+          setCandidateProfileResource({ status: 'ready', data: profile, error: null });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        if (error instanceof ApiError && error.status === 404) {
+          setCandidateProfileResource({ status: 'ready', data: null, error: null });
+          return;
+        }
+        setCandidateProfileResource((current) => ({
+          status: 'error',
+          data: current.data,
+          error: readableProfileError(error),
+        }));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authorizedRequest, candidateProfileReloadKey]);
 
   // Формируем список вкладок с учётом пользовательского порядка и подключённых площадок.
   const visiblePlatformTabs = useMemo<PlatformSwitcherItem[]>(() => {
@@ -158,6 +256,29 @@ export function App({ user, onLogout }: AppProps) {
   }, []);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    const hhResult = url.searchParams.get('hh');
+    if (!hhResult) return;
+
+    const message =
+      hhResult === 'connected'
+        ? 'HH.ru подключён к FIELD'
+        : hhResult === 'denied'
+          ? 'Подключение HH.ru отменено'
+          : hhResult === 'failed'
+            ? 'Не удалось подключить HH.ru'
+            : null;
+
+    if (message) showToast(message);
+    url.searchParams.delete('hh');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [showToast]);
+
+  useEffect(() => {
     if (!toastMessage) return;
     const timeout = window.setTimeout(() => setToastMessage(null), 2600);
     return () => window.clearTimeout(timeout);
@@ -171,28 +292,6 @@ export function App({ user, onLogout }: AppProps) {
   useEffect(() => {
     if (!isMobile && mobileSidebarOpen) setMobileSidebarOpen(false);
   }, [isMobile, mobileSidebarOpen]);
-
-  useEffect(() => {
-    if (!scrollTarget || settledPlatform !== selectedPlatform) return;
-
-    let secondFrame = 0;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        const target = document.getElementById(scrollTarget);
-        if (!target) return;
-        target.scrollIntoView({
-          behavior: reducedMotion ? 'auto' : 'smooth',
-          block: 'start',
-        });
-        setScrollTarget((current) => (current === scrollTarget ? null : current));
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-    };
-  }, [reducedMotion, scrollTarget, selectedPlatform, settledPlatform]);
 
   const closeDrawer = useCallback(
     (returnFocus = true) => {
@@ -252,8 +351,6 @@ export function App({ user, onLogout }: AppProps) {
   };
 
   const handleSelectPlatform = (platform: SelectedPlatform) => {
-    setScrollTarget(null);
-    if (platform !== selectedPlatform) setSettledPlatform(selectedPlatform);
     setSelectedPlatform(platform);
   };
 
@@ -282,7 +379,7 @@ export function App({ user, onLogout }: AppProps) {
   // Переход по левому меню обновляет активный раздел, но не меняет выбранную вкладку шапки.
   const handleNavigate = (section: ActiveSection) => {
     setActiveSection(section);
-    const soonLabel = soonLabels[section];
+    const soonLabel = placeholderLabels[section] ?? soonLabels[section];
     if (soonLabel) {
       showToast(`Раздел «${soonLabel}» готовится`);
       closeDrawer();
@@ -290,7 +387,18 @@ export function App({ user, onLogout }: AppProps) {
     }
 
     closeDrawer();
-    setScrollTarget(sectionTargets[section] ?? null);
+  };
+
+  const handleHome = () => {
+    handleSelectPlatform('all');
+    setExpandedStages({
+      me: false,
+      search: false,
+      introduction: false,
+      agreement: false,
+      analytics: false,
+    });
+    handleNavigate('overview');
   };
 
   const handlePeriodChange = () => {
@@ -309,6 +417,39 @@ export function App({ user, onLogout }: AppProps) {
     showToast(`${platformData[syncingPlatform].name}: данные обновлены`);
     await new Promise((resolve) => window.setTimeout(resolve, 1200));
     setSyncState({ platform: null, status: 'idle' });
+  };
+
+  const handleConnectHh = async () => {
+    if (hhConnectionAction) return;
+    setHhConnectionAction('connect');
+
+    try {
+      const { authorizationUrl } = await createDomainApi(authorizedRequest).hh.connect();
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      setHhConnectionAction(null);
+      showToast(readableHhError(error));
+    }
+  };
+
+  const handleDisconnectHh = async () => {
+    if (hhConnectionAction) return;
+    hhConnectionRequestRef.current += 1;
+    setHhConnectionAction('disconnect');
+
+    try {
+      await createDomainApi(authorizedRequest).hh.disconnect();
+      setHhConnectionResource({
+        status: 'ready',
+        data: { connected: false },
+        error: null,
+      });
+      showToast('HH.ru отключён от FIELD');
+    } catch (error) {
+      showToast(readableHhError(error));
+    } finally {
+      setHhConnectionAction(null);
+    }
   };
 
   const handleOpenDialog = (opener: HTMLButtonElement) => {
@@ -332,8 +473,6 @@ export function App({ user, onLogout }: AppProps) {
   };
 
   const handleConnectPlatform = (platform: AddablePlatform) => {
-    setScrollTarget(null);
-    if (platform !== selectedPlatform) setSettledPlatform(selectedPlatform);
     setConnectedPlatforms((current) =>
       current.includes(platform) ? current : [...current, platform],
     );
@@ -347,9 +486,21 @@ export function App({ user, onLogout }: AppProps) {
     );
   };
 
-  const handlePlatformSettled = useCallback((platform: SelectedPlatform) => {
-    setSettledPlatform(platform);
-  }, []);
+  const isProfileWorkspace =
+    activeSection === 'profile' ||
+    activeSection === 'resume' ||
+    activeSection === 'search-profile';
+
+  const hhConnection =
+    hhConnectionResource.status === 'ready' && hhConnectionResource.data.connected
+      ? hhConnectionResource.data
+      : null;
+  const hhConnectionStatus =
+    hhConnectionResource.status === 'ready'
+      ? hhConnectionResource.data.connected
+        ? 'connected'
+        : 'disconnected'
+      : hhConnectionResource.status;
 
   return (
     <>
@@ -369,8 +520,9 @@ export function App({ user, onLogout }: AppProps) {
             firstTriggerRef={firstTriggerRef}
             onToggle={handleToggleStage}
             onNavigate={handleNavigate}
-            onOpenDialog={handleOpenDialog}
+            onHome={handleHome}
             user={user}
+            candidateDisplayName={candidateProfileResource.data?.displayName ?? null}
             onLogout={onLogout}
           />
         }
@@ -385,42 +537,71 @@ export function App({ user, onLogout }: AppProps) {
           />
         }
       >
-        <AnimatedPageContent
-          targetKey={selectedPlatform}
-          reducedMotion={reducedMotion}
-          onSettled={handlePlatformSettled}
-          render={(visiblePlatform) => {
-            if (visiblePlatform === 'all') {
+        {isProfileWorkspace ? (
+          <ProfileWorkspace
+            activeSection={activeSection}
+            user={user}
+            authorizedRequest={authorizedRequest}
+            candidateProfile={candidateProfileResource.data}
+            candidateProfileStatus={candidateProfileResource.status}
+            candidateProfileError={candidateProfileResource.error}
+            onCandidateProfileChange={(profile) =>
+              setCandidateProfileResource({ status: 'ready', data: profile, error: null })
+            }
+            onRetryCandidateProfile={() => setCandidateProfileReloadKey((value) => value + 1)}
+            onNotify={showToast}
+          />
+        ) : (
+          <AnimatedPageContent
+            targetKey={selectedPlatform}
+            reducedMotion={reducedMotion}
+            render={(visiblePlatform) => {
+              if (visiblePlatform === 'all') {
+                return (
+                  <GeneralOverview
+                    data={generalOverviewData}
+                    period={period}
+                    periodLabel={periodLabels[period]}
+                    onPeriodChange={handlePeriodChange}
+                    onRecommendation={() =>
+                      showToast('Рекомендация сохранена в плане на неделю')
+                    }
+                  />
+                );
+              }
+
+              const visibleData = platformData[visiblePlatform];
+              const visibleSyncStatus =
+                syncState.platform === visiblePlatform ? syncState.status : 'idle';
+
               return (
-                <GeneralOverview
-                  data={generalOverviewData}
-                  period={period}
-                  periodLabel={periodLabels[period]}
-                  onPeriodChange={handlePeriodChange}
-                  onRecommendation={() =>
-                    showToast('Рекомендация сохранена в плане на неделю')
+                <PlatformWorkspace
+                  data={visibleData}
+                  lastSync={lastSyncOverrides[visiblePlatform] ?? visibleData.sync}
+                  syncStatus={visibleSyncStatus}
+                  syncDisabled={syncState.status !== 'idle'}
+                  vacanciesExpanded={vacanciesExpanded}
+                  onSync={() => handleSync(visiblePlatform)}
+                  onToggleVacancies={() => setVacanciesExpanded((current) => !current)}
+                  hhConnection={
+                    visiblePlatform === 'hh'
+                      ? {
+                          status: hhConnectionStatus,
+                          hhUserId: hhConnection?.hhUserId ?? null,
+                          connectedAt: hhConnection?.connectedAt ?? null,
+                          error: hhConnectionResource.error,
+                          action: hhConnectionAction,
+                          onConnect: () => void handleConnectHh(),
+                          onDisconnect: () => void handleDisconnectHh(),
+                          onRetry: () => void loadHhConnection(),
+                        }
+                      : undefined
                   }
                 />
               );
-            }
-
-            const visibleData = platformData[visiblePlatform];
-            const visibleSyncStatus =
-              syncState.platform === visiblePlatform ? syncState.status : 'idle';
-
-            return (
-              <PlatformWorkspace
-                data={visibleData}
-                lastSync={lastSyncOverrides[visiblePlatform] ?? visibleData.sync}
-                syncStatus={visibleSyncStatus}
-                syncDisabled={syncState.status !== 'idle'}
-                vacanciesExpanded={vacanciesExpanded}
-                onSync={() => handleSync(visiblePlatform)}
-                onToggleVacancies={() => setVacanciesExpanded((current) => !current)}
-              />
-            );
-          }}
-        />
+            }}
+          />
+        )}
       </AppShell>
 
       <ConnectPlatformDialog
